@@ -1,0 +1,6 @@
+.idea/
+.ipynb_checkpoints/
+.pytest_cache/
+*.ipynb
+nohup.out
+*.pyc
