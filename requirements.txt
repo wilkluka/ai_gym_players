@@ -1,0 +1,6 @@
+numpy>=1.16.1
+Keras==2.2.4
+tqdm>=4.30.0
+tensorflow>=1.12
+pytest>=4.2.0
+scikit-learn>=0.20.2
