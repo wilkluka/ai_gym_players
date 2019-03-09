@@ -115,5 +115,5 @@ class Simulation(object):
         curr_value = game.board.value()
         pos_values = np.array([pos.board.value() for pos in possibilities])
         utility_values = pos_values - curr_value + expected_values
-        best_possibility_index: int = np.argmax(utility_values)
+        best_possibility_index = np.argmax(utility_values)
         return [possibilities[best_possibility_index].move]

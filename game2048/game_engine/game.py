@@ -51,7 +51,7 @@ class Board(np.ndarray):
         return Board(np.zeros([BOARD_SIZE, BOARD_SIZE], dtype='uint16'))
 
     def __repr__(self):
-        return f"Board({self.tolist()})"
+        return "Board({})".format(self.tolist())
 
 
 class GameRound:
