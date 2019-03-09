@@ -93,13 +93,21 @@ class BoardSolver:
     def train(self, games_history: GamesHistory):
         boards, rewards = games_history.get_training_data_board_reward()
         boards = self.transform_boards(boards)
-        rewards = np.array(rewards).reshape(-1, 1)
+        boards1 = np.rot90(boards, axes=(1,2))
+        boards2 = np.rot90(boards1, axes=(1, 2))
+        boards3 = np.rot90(boards2, axes=(1, 2))
+        flipped0 = np.flip(boards, axis=1)
+        flipped1 = np.rot90(flipped0, axes=(1, 2))
+        flipped2 = np.rot90(flipped1, axes=(1, 2))
+        flipped3 = np.rot90(flipped2, axes=(1, 2))
+        x_train = np.concatenate([boards, boards1, boards2, boards3, flipped0, flipped1, flipped2, flipped3], axis=0)
+        y_train = np.array(rewards*8).reshape(-1, 1)
         last_min_loss = 1e6
         stationary_state_counter = 0
-        self.model.fit(boards, rewards, batch_size=2000, epochs=2, verbose=0)
+        self.model.fit(x_train, y_train, batch_size=2000, epochs=2, verbose=0)
         step_counter = 0
         while True:
-            history = self.model.fit(boards, rewards, batch_size=2000, epochs=1, verbose=0)
+            history = self.model.fit(x_train, y_train, batch_size=2000, epochs=1, verbose=0)
             current_min_loss = min(history.history['loss'])
             print('loss:\t\t{}\taccuracy:\t{}'.format(min(history.history['loss']), min(history.history['mean_absolute_error'])))
             # print('val loss:\t\t{}\tval accuracy:\t\t{}'.format(min(history.history['val_loss']), min(history.history['val_mean_absolute_error'])))
