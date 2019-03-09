@@ -1,13 +1,12 @@
 from random import random
+from typing import List
 
+from numpy.core._multiarray_umath import ndarray
 from tqdm import tqdm
 import numpy as np
 
 from bot.solver import BoardSolver
-from game_engine.game import Game, GamesHistory, all_moves, shuffle_moves, PastGame, GameRound
-
-MODEL_FILENAME = 'model'
-HISTORY_FILENAME = 'history'
+from game_engine.game import Game, GamesHistory, all_moves, shuffle_moves, PastGame, GameRound, GameProgress, Move
 
 
 def gen_from_beta(beta_par: float):
@@ -38,7 +37,7 @@ def play_with_game_tree(game_state, depth=5):
 
 class Simulation(object):
     def __init__(self, expected_rounds=100, history_limit=10):
-        self.games_history = GamesHistory(history_limit)
+        self.games_history = GamesHistory("simulation_history", history_limit)
         self.expected_rounds = expected_rounds
         self.model = BoardSolver()
         self.current_max = 1
@@ -51,8 +50,8 @@ class Simulation(object):
         self.save_model()
 
     def play(self):
-        self.games_history.erase()
-        temp_games_history = GamesHistory(1)
+        # self.games_history.erase()
+        temp_games_history = GamesHistory("turn_history")
         for _ in tqdm(range(self.expected_rounds)):
             past_game = self.play_round()
             temp_games_history.add_game(past_game)
@@ -65,11 +64,14 @@ class Simulation(object):
         game = Game()
         past_game = PastGame()
         round_count = 0
+        print("random_prob", random_move_prob)
         while not game.is_game_over():
             p = random()  # U(0,1)
             board = game.board.copy()  # for history
+            # add if only one choice possible then make it
             if p > random_move_prob:
-                choices = self.model.predict_move(game.board)
+                possibilities = [possibility for possibility in game.possible_moves.values() if possibility.is_possible]
+                choices = self.predict_move(possibilities, game)
             # elif p > random_move_prob:
             #     choices = [play_with_game_tree(game)[0]]
             else:
@@ -79,7 +81,8 @@ class Simulation(object):
                     past_game.add_round(GameRound(round_count, choice, board))
                     break
             round_count += 1
-        past_game.compute_score()
+        past_game.add_round(GameRound(round_count, None, game.board.copy()))  # possible?
+        self.current_max = max(self.current_max, past_game.compute_score())
         # past_game.print()
         return past_game
 
@@ -107,3 +110,10 @@ class Simulation(object):
     def is_over(self) -> bool:
         return False
 
+    def predict_move(self, possibilities: List[GameProgress], game: Game) -> List[Move]:
+        expected_values = self.model.predict(possibilities).reshape(-1)
+        curr_value = game.board.value()
+        pos_values = np.array([pos.board.value() for pos in possibilities])
+        utility_values = pos_values - curr_value + expected_values
+        best_possibility_index: int = np.argmax(utility_values)
+        return [possibilities[best_possibility_index].move]

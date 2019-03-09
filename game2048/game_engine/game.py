@@ -1,5 +1,7 @@
 from enum import Enum
 from bisect import insort
+from typing import Optional
+
 import numpy as np
 from functools import total_ordering
 from random import shuffle
@@ -17,36 +19,51 @@ class Move(Enum):
 all_moves = list(Move.__members__.values())
 
 
-def get_empty_board() -> np.array:
-    return np.zeros([BOARD_SIZE, BOARD_SIZE], dtype='uint16')
-
-
 class GameProgress:
 
     def __init__(self, move, is_possible, board=None):
         self.move = move
         self.is_possible = is_possible
-        self.board = board if board is not None else get_empty_board()
+        self.board = board if board is not None else Board.get_empty()
 
-    def __hash__(self) -> int:
-        return int(get_board_value(self.board)) + hash(self.move)
+    def __hash__(self):
+        return self.board.value() + hash(self.move) * 100000
+
+    def __eq__(self, other):
+        return hash(self) == hash(other)
 
 
-def get_board_value(board) -> float:
-    return sum(v * (np.log2(max(v, 1)) - 1) for v in board.flatten())
+class Board(np.ndarray):
+    def __new__(cls, *args, **kwargs):
+        kwargs['dtype'] = 'uint16'
+        this = np.array(*args, **kwargs)
+        this = np.asarray(this).view(cls)
+        return this
+
+    def __array_finalize__(self, obj):
+        pass
+
+    def value(self) -> int:
+        return int(sum(v * (np.log2(max(v, 1)) - 1) for v in self.flatten()))
+
+    @staticmethod
+    def get_empty():
+        return Board(np.zeros([BOARD_SIZE, BOARD_SIZE], dtype='uint16'))
+
+    def __repr__(self):
+        return f"Board({self.tolist()})"
 
 
 class GameRound:
 
-    def __init__(self, game_round_num, move, board=None):
+    def __init__(self, game_round_num: int, move: Move, board: Optional[Board] = None):
         self.move = move
         self.game_round_num = game_round_num
-        self.board = board if board is not None else get_empty_board()
+        self.board = board if board is not None else Board.get_empty()
 
     def print(self):
         print(self.board)
         print(self.move)
-
 
 
 @total_ordering
@@ -67,21 +84,18 @@ class PastGame:
         return self.score < other.score
 
     def compute_score(self):
-        self.score = self.final_score = get_board_value(self.rounds[-1].board)
+        self.score = self.final_score = self.rounds[-1].board.value()
+        return self.score
 
     def print(self):
         for roundd in self.rounds:
             roundd.print()
 
 
-def are_boards_equal(left, right):
-    return np.all(left == right)
-
-
 class Game:
 
     def __init__(self):
-        self.board = get_empty_board()
+        self.board = Board.get_empty()
         self._add_new_board_tile()
         self._add_new_board_tile()
         self.possible_moves = {move: GameProgress(move, True) for move in all_moves}
@@ -152,7 +166,7 @@ class Game:
                         new_row.pop(0)
                     else:
                         self.possible_moves[move].board[row, col] = 0
-        self.possible_moves[move].is_possible = not are_boards_equal(self.board, self.possible_moves[move].board)
+        self.possible_moves[move].is_possible = not np.all(self.board == self.possible_moves[move].board)
 
     def _refresh_possible_moves(self):
         for move in all_moves:
@@ -181,9 +195,10 @@ class Game:
 
 class GamesHistory:
 
-    def __init__(self, limit=1000):
+    def __init__(self, info, limit=1000):
         self.games = []
         self.limit = limit
+        self.info = info
 
     def add_game(self, past_game: PastGame):
         insort(self.games, past_game)
@@ -198,20 +213,41 @@ class GamesHistory:
         last_n = min(last_n, self.limit)
         print(last_n, self.limit)
         print('#########################')
-        for game_n in range(1, last_n+1):
-            game = self.games[-game_n]
+        print(self.info)
+        for game in self.games[:-(last_n+1):-1]:
             print(game.score, '\t', game.rounds[-1].game_round_num, '\t', game.rounds[-1].move)
             print(game.rounds[-1].board)
             print('===========')
         print('#########################')
 
-    def get_training_data(self):
-        move_boards = sum([[(game_round.move, game_round.board) for game_round in game.rounds] for game in self.games], [])
+    def get_training_data_move_board(self):
+        move_boards = sum([[(game_round.move, game_round.board) for game_round in game.rounds] for game in self.games],
+                          [])
         moves, boards = map(list, zip(*move_boards))
         return moves, boards
 
+    def get_training_data_board_reward(self):
+        all_boards = []
+        all_rewards = []
+
+        for game in self.games:
+            board_values = [game_round.board.value() for game_round in game.rounds]
+            deltas = [nxt - curr for curr, nxt in zip(board_values, board_values[1:])]
+            rewards = []
+            curr = 0
+            discount = 0.8
+            for delta in deltas[::-1]:
+                curr = curr * discount + delta
+                rewards.append(curr)
+            rewards.reverse()
+            all_rewards.extend(rewards)
+            # trim is necessary coz we drop last round for computing deltas at line with zip
+            all_boards.extend([game_round.board for game_round in game.rounds[:-1]])
+        return all_boards, all_rewards
+
     def erase(self):
         self.games = []
+
 
 def shuffle_moves():
     moves = all_moves.copy()
