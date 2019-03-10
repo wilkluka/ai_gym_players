@@ -11,7 +11,7 @@ from game_engine.game import all_moves, GamesHistory, GameProgress
 
 BOARD_VALUES = np.array([0] + [2**i for i in range(1, 16)]).reshape(-1, 1)
 
-MY_ACTIVATION = 'linear'
+MY_ACTIVATION = 'relu'
 
 FILTERS_N = 128
 FILTERS_N_2 = 1024
@@ -45,12 +45,12 @@ class BoardSolver:
     @staticmethod
     def _create_ann():
         inputs = Input(shape=(4, 4, 16))
-        xa = Conv2D(filters=128, kernel_size=(2, 1), activation=MY_ACTIVATION)(inputs)
-        xb = Conv2D(filters=128, kernel_size=(1, 2), activation=MY_ACTIVATION)(inputs)
-        xaa = Conv2D(filters=1024, kernel_size=(2, 1), activation=MY_ACTIVATION)(xa)
-        xba = Conv2D(filters=1024, kernel_size=(2, 1), activation=MY_ACTIVATION)(xb)
-        xab = Conv2D(filters=1024, kernel_size=(1, 2), activation=MY_ACTIVATION)(xa)
-        xbb = Conv2D(filters=1024, kernel_size=(1, 2), activation=MY_ACTIVATION)(xb)
+        xa = Conv2D(filters=FILTERS_N, kernel_size=(2, 1), activation=MY_ACTIVATION)(inputs)
+        xb = Conv2D(filters=FILTERS_N, kernel_size=(1, 2), activation=MY_ACTIVATION)(inputs)
+        xaa = Conv2D(filters=FILTERS_N_2, kernel_size=(2, 1), activation=MY_ACTIVATION)(xa)
+        xba = Conv2D(filters=FILTERS_N_2, kernel_size=(2, 1), activation=MY_ACTIVATION)(xb)
+        xab = Conv2D(filters=FILTERS_N_2, kernel_size=(1, 2), activation=MY_ACTIVATION)(xa)
+        xbb = Conv2D(filters=FILTERS_N_2, kernel_size=(1, 2), activation=MY_ACTIVATION)(xb)
         x = Concatenate()([Flatten()(xx) for xx in [xaa, xab, xba, xbb]])
         x = Dense(64, activation='relu')(x)
         predictions = Dense(1, activation='linear')(x)
