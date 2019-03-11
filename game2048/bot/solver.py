@@ -3,23 +3,80 @@ from typing import List
 import numpy as np
 from keras.layers import Input, Dense, Conv2D, Flatten, Concatenate
 from keras.models import Model
-from keras.optimizers import Nadam
+from keras.optimizers import Nadam, Adam
 from sklearn.preprocessing import OneHotEncoder
+from sklearn.model_selection import train_test_split
 
 from game_engine.game import all_moves, GamesHistory, GameProgress
+from utils.print import table_print
+import pickle
 
 
 BOARD_VALUES = np.array([0] + [2**i for i in range(1, 16)]).reshape(-1, 1)
 
 MY_ACTIVATION = 'relu'
 
-FILTERS_N = 128
-FILTERS_N_2 = 1024
-
 B_FILTERS_N = 512
 B_FILTERS_N_2 = 4096
 
+S_FILTERS_N = 128
+S_FILTERS_N_2 = 1024
+
+BATCH_SIZE = 2600
+
+
+FILTERS_N = S_FILTERS_N
+FILTERS_N_2 = S_FILTERS_N_2
+
+
 WEIGHTS_FILE_PATH = "model_weights.h5"
+LEARNING_THRESHOLD = 0.9999
+WEIGHTS_PICKLE = "weights.pickle"
+
+
+class WeightsSaver:
+
+    def save(self, model):
+        raise NotImplementedError
+
+    def load(self, model):
+        raise NotImplementedError
+
+    def dump(self):
+        raise NotImplementedError
+
+
+class Caching(WeightsSaver):
+
+    def __init__(self):
+        self.weights = None
+
+    def save(self, model):
+        print("weights saved")
+        self.weights = model.get_weights()
+
+    def load(self, model):
+        if self.weights:
+            print("weights loaded")
+            model.set_weights(self.weights)
+
+    def dump(self):
+        if self.weights:
+            with open(WEIGHTS_PICKLE, "wb") as ffile:
+                pickle.dump(self.weights, ffile)
+            print("weights dumped to {}".format(WEIGHTS_PICKLE))
+
+
+class Saver(WeightsSaver):
+
+    def save(self, model):
+        model.save_weights(WEIGHTS_FILE_PATH)
+
+    def load(self, model):
+        model.load_weights(WEIGHTS_FILE_PATH)
+
+    def dump(self):  # nothing to do
+        pass
 
 
 class BoardSolver:
@@ -30,10 +87,12 @@ class BoardSolver:
         self.moves_ohe.fit([[m.value] for m in all_moves])
         self.board_ohe = OneHotEncoder()
         self.board_ohe.fit(BOARD_VALUES)
+        self.weights_saver = None
 
     def transform_moves(self, moves):
         pass
 
+    # @staticmethod
     # def transform_boards(list_of_boards):
     #     return np.array(list_of_boards).reshape([-1, 4, 4, 1])
 
@@ -45,6 +104,7 @@ class BoardSolver:
     @staticmethod
     def _create_ann():
         inputs = Input(shape=(4, 4, 16))
+        # inputs = Input(shape=(4, 4, 1))
         xa = Conv2D(filters=FILTERS_N, kernel_size=(2, 1), activation=MY_ACTIVATION)(inputs)
         xb = Conv2D(filters=FILTERS_N, kernel_size=(1, 2), activation=MY_ACTIVATION)(inputs)
         xaa = Conv2D(filters=FILTERS_N_2, kernel_size=(2, 1), activation=MY_ACTIVATION)(xa)
@@ -54,88 +114,106 @@ class BoardSolver:
         x = Concatenate()([Flatten()(xx) for xx in [xaa, xab, xba, xbb]])
         x = Dense(64, activation='relu')(x)
         predictions = Dense(1, activation='linear')(x)
-        nadam_custom = Nadam(lr=0.002, beta_1=0.9, beta_2=0.999, epsilon=None, schedule_decay=0.004)
+        my_optimizer = Nadam(lr=0.002, beta_1=0.9, beta_2=0.999, epsilon=None, schedule_decay=0.004)
+        # my_optimizer = Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.001, amsgrad=False)
 
         model = Model(inputs=inputs, outputs=predictions)
         model.compile(
-            optimizer=nadam_custom,
+            optimizer=my_optimizer,
             # loss='categorical_crossentropy',
             loss='mean_squared_error',
             metrics=['mae']
         )
         print(model.summary())
         return model
-    #
-    # def train(self, games_history: GamesHistory):
-    #     moves, boards = games_history.get_training_data()
-    #     boards = self.transform_boards(boards)
-    #     moves_count = Counter(moves)
-    #     print(moves_count)
-    #     true_moves = self.moves_ohe.transform([[m.value] for m in moves])
-    #     last_min_loss = 1e6
-    #     stationary_state_counter = 0
-    #     self.model.fit(boards, true_moves, batch_size=3000, epochs=2, verbose=0)
-    #     while True:
-    #         history = self.model.fit(boards, true_moves, batch_size=3000, epochs=1, verbose=0, validation_split=.36)
-    #         current_min_loss = min(history.history['val_loss'])
-    #         print('loss:\t\t{}\taccuracy:\t{}'.format(min(history.history['loss']), min(history.history['acc'])))
-    #         print('val loss:\t\t{}\tval accuracy:\t\t{}'.format(min(history.history['val_loss']), min(history.history['val_acc'])))
-    #         if (last_min_loss * 0.99997) > current_min_loss:
-    #             last_min_loss = current_min_loss
-    #             stationary_state_counter = 0
-    #             self.model.save_weights("model_weights.h5")
-    #         else:
-    #             stationary_state_counter += 1
-    #             if stationary_state_counter > 4:
-    #                 break
-    #     self.model.load_weights("model_weights.h5")
 
     def train(self, games_history: GamesHistory):
+        self.weights_saver = Caching()
         boards, rewards = games_history.get_training_data_board_reward()
         boards = self.transform_boards(boards)
-        boards1 = np.rot90(boards, axes=(1,2))
+        boards1 = np.rot90(boards, axes=(1, 2))
         boards2 = np.rot90(boards1, axes=(1, 2))
         boards3 = np.rot90(boards2, axes=(1, 2))
         flipped0 = np.flip(boards, axis=1)
         flipped1 = np.rot90(flipped0, axes=(1, 2))
         flipped2 = np.rot90(flipped1, axes=(1, 2))
         flipped3 = np.rot90(flipped2, axes=(1, 2))
-        x_train = np.concatenate([boards, boards1, boards2, boards3, flipped0, flipped1, flipped2, flipped3], axis=0)
-        y_train = np.array(rewards*8).reshape(-1, 1)
-        last_min_loss = 1e6
+        x_data = np.concatenate([boards, boards1, boards2, boards3, flipped0, flipped1, flipped2, flipped3], axis=0)
+        y_data = np.array(rewards*8).reshape(-1, 1)
+        x_train, x_valid, y_train, y_valid = train_test_split(x_data, y_data, test_size=0.38, shuffle=True)
+        last_min_val_loss = 1e6
         stationary_state_counter = 0
-        self.model.fit(x_train, y_train, batch_size=2000, epochs=2, verbose=0)
+        self.weights_saver.save(self.model)
+        history = self.model.fit(x_train, y_train, batch_size=BATCH_SIZE, epochs=1, verbose=1)
+        last_min_loss = min(history.history['loss'])
         step_counter = 0
+        table_print("loss accuracy(mae) val_loss val_accuracy(mae)".split(), 30)
+        best_loss_indicator = "*"
+        is_good_epoch = True
+        train_on = ['train', 'val'][0]
+        # while True:
+        #     history = self.model.fit(x_train, y_train, batch_size=2600, epochs=1, verbose=1)
+        #     if history.history['loss'][0] < (.95 * last_min_loss):
+        #         last_min_loss = history.history['loss'][0]
+        #     else:
+        #         break
+
         while True:
-            history = self.model.fit(x_train, y_train, batch_size=2000, epochs=1, verbose=0)
-            current_min_loss = min(history.history['loss'])
-            print('loss:\t\t{}\taccuracy:\t{}'.format(min(history.history['loss']), min(history.history['mean_absolute_error'])))
-            # print('val loss:\t\t{}\tval accuracy:\t\t{}'.format(min(history.history['val_loss']), min(history.history['val_mean_absolute_error'])))
-            if (last_min_loss * 0.997) > current_min_loss:
+            history = self.model.fit(x_train, y_train, batch_size=BATCH_SIZE, epochs=1, verbose=0)
+            current_min_loss = history.history['loss'][0]
+            validation_result = self.model.evaluate(x_valid, y_valid, batch_size=BATCH_SIZE)
+            print(validation_result)
+            raise NotImplementedError
+            current_min_val_loss = history.history['val_loss'][0]
+            if (last_min_loss * LEARNING_THRESHOLD) > current_min_loss:
+                best_loss_info = best_loss_indicator
                 last_min_loss = current_min_loss
+                if train_on == 'train':
+                    is_good_epoch = True
+
+            else:
+                best_loss_info = " "
+                if train_on == 'train':
+                    is_good_epoch = False
+
+            if (last_min_val_loss * LEARNING_THRESHOLD) > current_min_val_loss:
+                best_val_loss_info = best_loss_indicator
+                last_min_val_loss = current_min_val_loss
+                if train_on == 'val':
+                    is_good_epoch = True
+            else:
+                best_val_loss_info = ' '
+                if train_on == 'val':
+                    is_good_epoch = False
+
+            if is_good_epoch:
                 stationary_state_counter = 0
+                if step_counter % 2 == 0:
+                    self.weights_saver.save(self.model)
                 step_counter += 1
-                if step_counter % 3 == 1:
-                    self.model.save_weights(WEIGHTS_FILE_PATH)
+
             else:
                 stationary_state_counter += 1
-                if stationary_state_counter > 3:
-                    self.model.load_weights(WEIGHTS_FILE_PATH)
+                if stationary_state_counter > 5:
+                    self.weights_saver.load(self.model)
                     break
-        print('training over')
+            if train_on == 'train':
+                best_loss_info = '!' + best_loss_info
+            else:
+                best_val_loss_info = '!' + best_val_loss_info
 
-    # def predict_move(self, board, _reshaped_board=np.zeros([1, 4, 4, 1])):
-    #     np.copyto(_reshaped_board[0, :, :, 0], board)
-    #     return [Move(x) for x in (np.argsort(self.model.predict(_reshaped_board))[0] + 1)][::-1]
+            print_data = [
+                "{}{}".format(best_loss_info, history.history['loss'][0]),
+                history.history['mean_absolute_error'][0],
+                "{}{}".format(best_val_loss_info, history.history['val_loss'][0]),
+                history.history['val_mean_absolute_error'][0]
+            ]
+            table_print(print_data, 30)
+        self.weights_saver.dump()
+        print('training over')
 
     def predict(self, possibilities: List[GameProgress]):
         moves, boards = zip(*[(possibility.move, possibility.board) for possibility in possibilities])
         boards = self.transform_boards(boards)
         expected_values = self.model.predict(boards)
         return expected_values
-
-        # possibilities
-        # reshaped_board = self.transform_boards([board])
-        # return [Move(x) for x in (np.argsort(self.model.predict(reshaped_board))[0] + 1)][::-1]
-
-

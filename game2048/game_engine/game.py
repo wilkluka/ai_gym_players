@@ -45,6 +45,8 @@ class Board(np.ndarray):
 
     def value(self) -> int:
         return int(sum(v * (np.log2(max(v, 1)) - 1) for v in self.flatten()))
+    # def value(self) -> int:
+    #     return int(self.max() + self.sum())
 
     @staticmethod
     def get_empty():
@@ -192,13 +194,19 @@ class Game:
     def get_board_value(self) -> float:
         return sum(v * (np.log2(max(v, 1)) - 1) for v in self.board.flatten())
 
-
+import pickle
 class GamesHistory:
 
     def __init__(self, info, limit=1000):
         self.games = []
         self.limit = limit
         self.info = info
+
+    @staticmethod
+    def merge(first, second):
+        new_ob = GamesHistory("merged")
+        new_ob.games = first.games + second.games
+        return new_ob
 
     def add_game(self, past_game: PastGame):
         insort(self.games, past_game)
@@ -214,7 +222,7 @@ class GamesHistory:
         print(last_n, self.limit)
         print('#########################')
         print(self.info)
-        for game in self.games[:-(last_n+1):-1]:
+        for game in self.games[::-1]:
             print(game.score, '\t', game.rounds[-1].game_round_num, '\t', game.rounds[-1].move)
             print(game.rounds[-1].board)
             print('===========')
@@ -229,20 +237,26 @@ class GamesHistory:
     def get_training_data_board_reward(self):
         all_boards = []
         all_rewards = []
-
+        discount = 0.9
         for game in self.games:
             board_values = [game_round.board.value() for game_round in game.rounds]
-            deltas = [nxt - curr for curr, nxt in zip(board_values, board_values[1:])]
-            rewards = []
-            curr = 0
-            discount = 0.8
-            for delta in deltas[::-1]:
-                curr = curr * discount + delta
-                rewards.append(curr)
-            rewards.reverse()
-            all_rewards.extend(rewards)
+            # rewards = [2 * nxt - curr for curr, nxt in zip(board_values, board_values[1:])]
+            # curr = rewards[-1]
+            # new_rewards = []
+            # for r in rewards[::-1]:
+            #     curr = curr * discount + r * (1-discount)
+            #     new_rewards.append(curr)
+            # new_rewards.reverse()
+
+            # this is small hack to ensure that we have sufficient data for higher level boards
+            all_rewards.extend(board_values[1:] + [board_values[-1]])
             # trim is necessary coz we drop last round for computing deltas at line with zip
-            all_boards.extend([game_round.board for game_round in game.rounds[:-1]])
+            all_boards.extend([game_round.board for game_round in game.rounds])
+            # print(len(all_boards), len(all_rewards))
+            assert len(all_boards) == len(all_rewards)
+        with open("game_history.pickle", "wb") as ffile:
+            pickle.dump((all_boards, all_rewards), ffile)
+        print("data dumped")
         return all_boards, all_rewards
 
     def erase(self):

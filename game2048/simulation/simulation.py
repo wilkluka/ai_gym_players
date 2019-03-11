@@ -4,6 +4,7 @@ from typing import List
 from numpy.core._multiarray_umath import ndarray
 from tqdm import tqdm
 import numpy as np
+import subprocess
 
 from bot.solver import BoardSolver
 from game_engine.game import Game, GamesHistory, all_moves, shuffle_moves, PastGame, GameRound, GameProgress, Move
@@ -41,9 +42,12 @@ class Simulation(object):
         self.expected_rounds = expected_rounds
         self.model = BoardSolver()
         self.current_max = 1
+        self.temp_games_history = None
 
     def run(self):
+        ticker = tqdm(total=100, desc="total turns")
         while not self.is_over():
+            ticker.update(1)
             self.play()
             self.train_solver()
             self.print_summary()
@@ -51,24 +55,23 @@ class Simulation(object):
 
     def play(self):
         # self.games_history.erase()
-        temp_games_history = GamesHistory("turn_history")
+        self.temp_games_history = GamesHistory("turn_history")
         for _ in tqdm(range(self.expected_rounds)):
             past_game = self.play_round()
-            temp_games_history.add_game(past_game)
-        temp_games_history.print()
-        self.games_history.update(temp_games_history)
+            self.temp_games_history.add_game(past_game)
+        self.temp_games_history.print()
+        self.games_history.update(self.temp_games_history)
         self.games_history.print()
 
     def play_round(self) -> PastGame:
-        random_move_prob = gen_from_beta(self.current_max)
+        random_move_prob = gen_from_beta(np.power(self.current_max, 5/4))
         game = Game()
         past_game = PastGame()
         round_count = 0
         print("random_prob", random_move_prob)
         while not game.is_game_over():
             p = random()  # U(0,1)
-            board = game.board.copy()  # for history
-            # add if only one choice possible then make it
+            # current_board = game.board.copy()
             if p > random_move_prob:
                 possibilities = [possibility for possibility in game.possible_moves.values() if possibility.is_possible]
                 choices = self.predict_move(possibilities, game)
@@ -77,12 +80,17 @@ class Simulation(object):
             else:
                 choices = shuffle_moves()
             for choice in choices:
-                if game.move(choice):
-                    past_game.add_round(GameRound(round_count, choice, board))
+                if game.possible_moves[choice].is_possible:
+                    past_game.add_round(GameRound(round_count, choice, game.possible_moves[choice].board.copy()))
+                    # past_game.add_round(GameRound(round_count, choice, current_board))
+                    game.move(choice)
                     break
             round_count += 1
         past_game.add_round(GameRound(round_count, None, game.board.copy()))  # possible?
-        self.current_max = max(self.current_max, past_game.compute_score())
+        last_score = past_game.compute_score()
+        if last_score > self.current_max:
+            self.current_max = last_score
+            subprocess.call("paplay /usr/share/sounds/freedesktop/stereo/complete.oga".split())
         # past_game.print()
         return past_game
 
@@ -90,7 +98,7 @@ class Simulation(object):
         pass
 
     def train_solver(self):
-        self.model.train(self.games_history)
+        self.model.train(GamesHistory.merge(self.games_history, self.temp_games_history))
 
     def print_summary(self):
         pass
@@ -111,9 +119,10 @@ class Simulation(object):
         return False
 
     def predict_move(self, possibilities: List[GameProgress], game: Game) -> List[Move]:
+        IMMEDIATE_REWARD_MULT = 2
         expected_values = self.model.predict(possibilities).reshape(-1)
         curr_value = game.board.value()
         pos_values = np.array([pos.board.value() for pos in possibilities])
-        utility_values = pos_values - curr_value + expected_values
-        best_possibility_index = np.argmax(utility_values)
+        utility_values = (pos_values - curr_value) * IMMEDIATE_REWARD_MULT + expected_values
+        best_possibility_index = int(np.argmax(utility_values))
         return [possibilities[best_possibility_index].move]
