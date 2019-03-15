@@ -96,6 +96,7 @@ class PastGame:
 class Game:
 
     def __init__(self):
+        self.move_count = 0
         self.board = Board.get_empty()
         self._add_new_board_tile()
         self._add_new_board_tile()
@@ -178,7 +179,7 @@ class Game:
             return False
 
         self._set_board(self.possible_moves[move].board, add_new_tile=True, refresh_moves=True)
-
+        self.move_count += 1
         return True
 
     def is_game_over(self):
@@ -236,9 +237,11 @@ class GamesHistory:
     def get_training_data_board_reward(self):
         all_boards = []
         all_rewards = []
+        all_move_nrs = []
         # discount = 0.9
         reward_part = 0.3
         for game in self.games:
+            move_nrs = [game_round.game_round_num for game_round in game.rounds]
             board_values = [game_round.board.value() for game_round in game.rounds]
             modified_board_values = [reward_part * game.final_score + (1 - reward_part) * bv for bv in board_values]
             # rewards = [2 * nxt - curr for curr, nxt in zip(board_values, board_values[1:])]
@@ -250,15 +253,16 @@ class GamesHistory:
             # new_rewards.reverse()
 
             # this is small hack to ensure that we have sufficient data for higher level boards
-            all_rewards.extend(modified_board_values[1:] + [modified_board_values[-1]])
+            all_rewards.extend(board_values[2:] + [board_values[-1]] * 2)
             # trim is necessary coz we drop last round for computing deltas at line with zip
             all_boards.extend([game_round.board for game_round in game.rounds])
+            all_move_nrs.extend(move_nrs)
             # print(len(all_boards), len(all_rewards))
             assert len(all_boards) == len(all_rewards)
         with open("game_history.pickle", "wb") as ffile:
             pickle.dump((all_boards, all_rewards), ffile)
         print("data dumped")
-        return all_boards, all_rewards
+        return all_boards, all_rewards, all_move_nrs
 
     def erase(self):
         self.games = []
