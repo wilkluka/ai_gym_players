@@ -1,6 +1,8 @@
+from datetime import time
 from typing import List
 
 import numpy as np
+from keras.callbacks import TensorBoard
 from keras.layers import Input, Dense, Conv2D, Flatten, Concatenate
 from keras.models import Model
 from keras.optimizers import Nadam, Adam
@@ -88,6 +90,7 @@ class BoardSolver:
         self.board_ohe = OneHotEncoder()
         self.board_ohe.fit(BOARD_VALUES)
         self.weights_saver = None
+        self.episode_counter = 0
 
     def transform_moves(self, moves):
         pass
@@ -128,6 +131,8 @@ class BoardSolver:
         return model
 
     def train(self, games_history: GamesHistory):
+        self.episode_counter += 1
+        tensorboard = TensorBoard(log_dir="logs/episode_{}_{}".format(self.episode_counter, time()))
         self.weights_saver = Caching()
         boards, rewards = games_history.get_training_data_board_reward()
         boards = self.transform_boards(boards)
@@ -144,13 +149,21 @@ class BoardSolver:
         last_min_val_loss = 1e6
         stationary_state_counter = 0
         self.weights_saver.save(self.model)
-        history = self.model.fit(x_train, y_train, batch_size=BATCH_SIZE, epochs=1, verbose=1)
+        history = self.model.fit(
+            x=x_train,
+            y=y_train,
+            validation_data=(x_valid, y_valid),
+            batch_size=BATCH_SIZE,
+            epochs=1,
+            verbose=1,
+            callbacks=[tensorboard]
+        )
         last_min_loss = min(history.history['loss'])
         step_counter = 0
         table_print("loss accuracy(mae) val_loss val_accuracy(mae)".split(), 30)
         best_loss_indicator = "*"
         is_good_epoch = True
-        train_on = ['train', 'val'][0]
+        train_on = ['train', 'val'][1]
         # while True:
         #     history = self.model.fit(x_train, y_train, batch_size=2600, epochs=1, verbose=1)
         #     if history.history['loss'][0] < (.95 * last_min_loss):
@@ -159,26 +172,32 @@ class BoardSolver:
         #         break
 
         while True:
-            history = self.model.fit(x_train, y_train, batch_size=BATCH_SIZE, epochs=1, verbose=0)
-            current_min_loss = history.history['loss'][0]
-            validation_result = self.model.evaluate(x_valid, y_valid, batch_size=BATCH_SIZE)
-            print(validation_result)
-            raise NotImplementedError
-            current_min_val_loss = history.history['val_loss'][0]
-            if (last_min_loss * LEARNING_THRESHOLD) > current_min_loss:
+            history = self.model.fit(
+                x=x_train,
+                y=y_train,
+                validation_data=(x_valid, y_valid),
+                batch_size=BATCH_SIZE,
+                epochs=1,
+                verbose=0,
+                callbacks=[tensorboard]
+            )
+            current_loss = history.history['loss'][0]
+            curr_mae = history.history['mean_absolute_error'][0]
+            current_val_loss = history.history['val_loss'][0]
+            curr_val_mae = history.history['val_mean_absolute_error'][0]
+            if (last_min_loss * LEARNING_THRESHOLD) > current_loss:
                 best_loss_info = best_loss_indicator
-                last_min_loss = current_min_loss
+                last_min_loss = current_loss
                 if train_on == 'train':
                     is_good_epoch = True
-
             else:
                 best_loss_info = " "
                 if train_on == 'train':
                     is_good_epoch = False
 
-            if (last_min_val_loss * LEARNING_THRESHOLD) > current_min_val_loss:
+            if (last_min_val_loss * LEARNING_THRESHOLD) > current_val_loss:
                 best_val_loss_info = best_loss_indicator
-                last_min_val_loss = current_min_val_loss
+                last_min_val_loss = current_val_loss
                 if train_on == 'val':
                     is_good_epoch = True
             else:
@@ -186,29 +205,31 @@ class BoardSolver:
                 if train_on == 'val':
                     is_good_epoch = False
 
+            # generate step for visualization
+
             if is_good_epoch:
                 stationary_state_counter = 0
                 if step_counter % 2 == 0:
                     self.weights_saver.save(self.model)
                 step_counter += 1
-
             else:
                 stationary_state_counter += 1
                 if stationary_state_counter > 5:
                     self.weights_saver.load(self.model)
                     break
+
             if train_on == 'train':
                 best_loss_info = '!' + best_loss_info
             else:
                 best_val_loss_info = '!' + best_val_loss_info
 
-            print_data = [
-                "{}{}".format(best_loss_info, history.history['loss'][0]),
-                history.history['mean_absolute_error'][0],
-                "{}{}".format(best_val_loss_info, history.history['val_loss'][0]),
-                history.history['val_mean_absolute_error'][0]
-            ]
-            table_print(print_data, 30)
+            # print_data = [
+            #     "{}{}".format(best_loss_info, current_loss),
+            #     curr_mae,
+            #     "{}{}".format(best_val_loss_info, current_val_loss),
+            #     curr_val_mae
+            # ]
+            # table_print(print_data, 30)
         self.weights_saver.dump()
         print('training over')
 

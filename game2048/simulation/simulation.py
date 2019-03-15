@@ -1,7 +1,7 @@
 from random import random
 from typing import List
 
-from numpy.core._multiarray_umath import ndarray
+from tensorboardX import SummaryWriter
 from tqdm import tqdm
 import numpy as np
 import subprocess
@@ -43,6 +43,7 @@ class Simulation(object):
         self.model = BoardSolver()
         self.current_max = 1
         self.temp_games_history = None
+        # self.tensorboardx_writer = SummaryWriter("game_results")
 
     def run(self):
         ticker = tqdm(total=100, desc="total turns")
@@ -62,6 +63,8 @@ class Simulation(object):
         self.temp_games_history.print()
         self.games_history.update(self.temp_games_history)
         self.games_history.print()
+        # self.tensorboardx_writer.add_scalar("best_score", self.games_history.games[-1].final_score)
+        # self.tensorboardx_writer.add_scalar("best_score_this_episode", self.temp_games_history.games[-1].final_score)
 
     def play_round(self) -> PastGame:
         random_move_prob = gen_from_beta(np.power(self.current_max, 5/4))

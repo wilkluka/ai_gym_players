@@ -6,3 +6,4 @@ nohup.out
 *.pyc
 *.h5
 *.pickle
+logs

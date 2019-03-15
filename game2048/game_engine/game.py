@@ -72,7 +72,6 @@ class GameRound:
 class PastGame:
 
     def __init__(self):
-        self.score = 0
         self.final_score = 0
         self.rounds = []
 
@@ -80,14 +79,14 @@ class PastGame:
         self.rounds.append(game_round)
 
     def __eq__(self, other) -> bool:
-        return self.score == other.score
+        return self.final_score == other.final_score
 
     def __lt__(self, other) -> bool:
-        return self.score < other.score
+        return self.final_score < other.final_score
 
     def compute_score(self):
-        self.score = self.final_score = self.rounds[-1].board.value()
-        return self.score
+        self.final_score = self.rounds[-1].board.value()
+        return self.final_score
 
     def print(self):
         for roundd in self.rounds:
@@ -223,7 +222,7 @@ class GamesHistory:
         print('#########################')
         print(self.info)
         for game in self.games[::-1]:
-            print(game.score, '\t', game.rounds[-1].game_round_num, '\t', game.rounds[-1].move)
+            print(game.final_score, '\t', game.rounds[-1].game_round_num, '\t', game.rounds[-1].move)
             print(game.rounds[-1].board)
             print('===========')
         print('#########################')
@@ -237,9 +236,11 @@ class GamesHistory:
     def get_training_data_board_reward(self):
         all_boards = []
         all_rewards = []
-        discount = 0.9
+        # discount = 0.9
+        reward_part = 0.3
         for game in self.games:
             board_values = [game_round.board.value() for game_round in game.rounds]
+            modified_board_values = [reward_part * game.final_score + (1 - reward_part) * bv for bv in board_values]
             # rewards = [2 * nxt - curr for curr, nxt in zip(board_values, board_values[1:])]
             # curr = rewards[-1]
             # new_rewards = []
@@ -249,7 +250,7 @@ class GamesHistory:
             # new_rewards.reverse()
 
             # this is small hack to ensure that we have sufficient data for higher level boards
-            all_rewards.extend(board_values[1:] + [board_values[-1]])
+            all_rewards.extend(modified_board_values[1:] + [modified_board_values[-1]])
             # trim is necessary coz we drop last round for computing deltas at line with zip
             all_boards.extend([game_round.board for game_round in game.rounds])
             # print(len(all_boards), len(all_rewards))
