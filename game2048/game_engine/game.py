@@ -5,6 +5,8 @@ from typing import Optional
 import numpy as np
 from functools import total_ordering
 from random import shuffle
+import pickle
+
 
 BOARD_SIZE = 4
 
@@ -58,14 +60,16 @@ class Board(np.ndarray):
 
 class GameRound:
 
-    def __init__(self, game_round_num: int, move: Move, board: Optional[Board] = None):
+    def __init__(self, game_round_num: int, move: Move, current_score: float, board: Optional[Board] = None):
         self.move = move
         self.game_round_num = game_round_num
         self.board = board if board is not None else Board.get_empty()
+        self.score = current_score
 
-    def print(self):
+    def print(self, minimal: bool):
+        if not minimal:
+            print("{}\t{}\t{}".format(self.score, self.move, self.game_round_num))
         print(self.board)
-        print(self.move)
 
 
 @total_ordering
@@ -102,6 +106,7 @@ class Game:
         self._add_new_board_tile()
         self.possible_moves = {move: GameProgress(move, True) for move in all_moves}
         self._refresh_possible_moves()
+        self.current_score = 0
 
     def _set_board(self, board, add_new_tile, refresh_moves) -> None:
         np.copyto(self.board, board)
@@ -175,10 +180,11 @@ class Game:
             self._make_move(move)
 
     def move(self, move):
-        if not self.possible_moves[move].is_possible:
+        next_move = self.possible_moves[move]
+        if not next_move.is_possible:
             return False
-
-        self._set_board(self.possible_moves[move].board, add_new_tile=True, refresh_moves=True)
+        self.current_score += next_move.board.value() - self.board.value()
+        self._set_board(next_move.board, add_new_tile=True, refresh_moves=True)
         self.move_count += 1
         return True
 
@@ -194,7 +200,7 @@ class Game:
     def get_board_value(self) -> float:
         return sum(v * (np.log2(max(v, 1)) - 1) for v in self.board.flatten())
 
-import pickle
+
 class GamesHistory:
 
     def __init__(self, info, limit=1000):
@@ -241,9 +247,7 @@ class GamesHistory:
         # discount = 0.9
         reward_part = 0.3
         for game in self.games:
-            move_nrs = [game_round.game_round_num for game_round in game.rounds]
-            board_values = [game_round.board.value() for game_round in game.rounds]
-            modified_board_values = [reward_part * game.final_score + (1 - reward_part) * bv for bv in board_values]
+            move_nrs, scores = map(list, zip(*[(rnd.game_round_num, rnd.score) for rnd in game.rounds]))
             # rewards = [2 * nxt - curr for curr, nxt in zip(board_values, board_values[1:])]
             # curr = rewards[-1]
             # new_rewards = []
@@ -253,7 +257,7 @@ class GamesHistory:
             # new_rewards.reverse()
 
             # this is small hack to ensure that we have sufficient data for higher level boards
-            all_rewards.extend(board_values[2:] + [board_values[-1]] * 2)
+            all_rewards.extend(scores[2:] + [scores[-1]] * 2)
             # trim is necessary coz we drop last round for computing deltas at line with zip
             all_boards.extend([game_round.board for game_round in game.rounds])
             all_move_nrs.extend(move_nrs)
@@ -263,6 +267,9 @@ class GamesHistory:
             pickle.dump((all_boards, all_rewards), ffile)
         print("data dumped")
         return all_boards, all_rewards, all_move_nrs
+
+    def get_best_worst_score(self):
+        return self.games[-1].final_score, self.games[0].final_score
 
     def erase(self):
         self.games = []

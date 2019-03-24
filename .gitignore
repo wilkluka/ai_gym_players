@@ -7,3 +7,4 @@ nohup.out
 *.h5
 *.pickle
 logs
+*.xz

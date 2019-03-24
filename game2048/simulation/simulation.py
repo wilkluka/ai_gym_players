@@ -1,13 +1,14 @@
 from random import random
 from typing import List
 
-from tensorboardX import SummaryWriter
+import tensorflow as tf
 from tqdm import tqdm
 import numpy as np
 import subprocess
 
 from bot.solver import BoardSolver
 from game_engine.game import Game, GamesHistory, all_moves, shuffle_moves, PastGame, GameRound, GameProgress, Move
+from utils.tb import TBLogger
 
 
 def gen_from_beta(beta_par: float):
@@ -43,23 +44,15 @@ class Simulation(object):
         self.model = BoardSolver()
         self.current_max = 1
         self.temp_games_history = None
-        self.tensorboardx_writer = SummaryWriter("logs/game_results")
+        self.tb_best = TBLogger("logs/game_results_best")
+        self.tb_worst = TBLogger("logs/game_results_worst")
+        self.tb_hists = TBLogger("logs/game_results_hists")
+        self.episodes_count = 0
 
     def run(self):
-        ticker = tqdm(total=100, desc="total turns")
         while not self.is_over():
-            ticker.update(1)
             self.play()
-            self.tensorboardx_writer.add_scalar(
-                "best_score",
-                self.games_history.games[-1].final_score,
-                global_step=ticker.n
-            )
-            self.tensorboardx_writer.add_scalar(
-                "best_score_this_episode",
-                self.temp_games_history.games[-1].final_score,
-                global_step=ticker.n
-            )
+            self.write_play_logs()
             self.train_solver()
             self.print_summary()
         self.save_model()
@@ -82,7 +75,7 @@ class Simulation(object):
         print("random_prob", random_move_prob)
         while not game.is_game_over():
             p = random()  # U(0,1)
-            # current_board = game.board.copy()
+            current_board = game.board.copy()
             if p > random_move_prob:
                 possibilities = [possibility for possibility in game.possible_moves.values() if possibility.is_possible]
                 choices = self.predict_move(possibilities, game)
@@ -92,12 +85,11 @@ class Simulation(object):
                 choices = shuffle_moves()
             for choice in choices:
                 if game.possible_moves[choice].is_possible:
-                    past_game.add_round(GameRound(round_count, choice, game.possible_moves[choice].board.copy()))
                     # past_game.add_round(GameRound(round_count, choice, current_board))
                     game.move(choice)
+                    past_game.add_round(GameRound(round_count, choice, game.current_score, current_board))
                     break
             round_count += 1
-        past_game.add_round(GameRound(round_count, None, game.board.copy()))  # possible?
         last_score = past_game.compute_score()
         if last_score > self.current_max:
             self.current_max = last_score
@@ -127,13 +119,36 @@ class Simulation(object):
         # print("Saved model to disk")
 
     def is_over(self) -> bool:
+        self.episodes_count += 1
         return False
 
     def predict_move(self, possibilities: List[GameProgress], game: Game) -> List[Move]:
-        IMMEDIATE_REWARD_MULT = 2
+        REWARD_MULT = 20
         expected_values = self.model.predict(possibilities, game.move_count).reshape(-1)
         curr_value = game.board.value()
         pos_values = np.array([pos.board.value() for pos in possibilities])
-        utility_values = (pos_values - curr_value) * IMMEDIATE_REWARD_MULT + expected_values
+        utility_values = (pos_values - curr_value) * REWARD_MULT + expected_values
         best_possibility_index = int(np.argmax(utility_values))
         return [possibilities[best_possibility_index].move]
+
+    def write_play_logs(self):
+        simul_best, simul_worst = self.games_history.get_best_worst_score()
+        episode_best, episode_worst = self.temp_games_history.get_best_worst_score()
+        self.tb_best.log_scalar("score/simulation", simul_best, self.episodes_count)
+        self.tb_best.log_scalar("score/episode", episode_best, self.episodes_count)
+
+        self.tb_worst.log_scalar("score/simulation", simul_worst, self.episodes_count)
+        self.tb_worst.log_scalar("score/episode", episode_worst, self.episodes_count)
+
+        _, episode_rewards, _ = self.temp_games_history.get_training_data_board_reward()
+        _, simul_rewards, _ = self.games_history.get_training_data_board_reward()
+        self.tb_hists.log_histogram(
+            "score/simulation",
+            simul_rewards,
+            self.episodes_count
+        )
+        self.tb_hists.log_histogram(
+            "score/episode",
+            episode_rewards,
+            self.episodes_count
+        )
