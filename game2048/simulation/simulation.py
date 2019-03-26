@@ -1,14 +1,16 @@
 from random import random
 from typing import List
 
-import tensorflow as tf
 from tqdm import tqdm
 import numpy as np
 import subprocess
 
 from bot.solver import BoardSolver
 from game_engine.game import Game, GamesHistory, all_moves, shuffle_moves, PastGame, GameRound, GameProgress, Move
+from utils.magic_collections import MagicList
 from utils.tb import TBLogger
+
+REWARD_MULT = 20
 
 
 def gen_from_beta(beta_par: float):
@@ -123,8 +125,7 @@ class Simulation(object):
         return False
 
     def predict_move(self, possibilities: List[GameProgress], game: Game) -> List[Move]:
-        REWARD_MULT = 20
-        expected_values = self.model.predict(possibilities, game.move_count).reshape(-1)
+        expected_values = self.model.predict(possibilities).reshape(-1)
         curr_value = game.board.value()
         pos_values = np.array([pos.board.value() for pos in possibilities])
         utility_values = (pos_values - curr_value) * REWARD_MULT + expected_values
@@ -140,15 +141,15 @@ class Simulation(object):
         self.tb_worst.log_scalar("score/simulation", simul_worst, self.episodes_count)
         self.tb_worst.log_scalar("score/episode", episode_worst, self.episodes_count)
 
-        _, episode_rewards, _ = self.temp_games_history.get_training_data_board_reward()
-        _, simul_rewards, _ = self.games_history.get_training_data_board_reward()
+        _, episode_rewards = self.temp_games_history.get_training_data()
+        _, simul_rewards = self.games_history.get_training_data()
         self.tb_hists.log_histogram(
             "score/simulation",
-            simul_rewards,
+            MagicList(simul_rewards).flatten(),
             self.episodes_count
         )
         self.tb_hists.log_histogram(
             "score/episode",
-            episode_rewards,
+            MagicList(episode_rewards).flatten(),
             self.episodes_count
         )

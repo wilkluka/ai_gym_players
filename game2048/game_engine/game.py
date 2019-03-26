@@ -47,8 +47,6 @@ class Board(np.ndarray):
 
     def value(self) -> int:
         return int(sum(v * (np.log2(max(v, 1)) - 1) for v in self.flatten()))
-    # def value(self) -> int:
-    #     return int(self.max() + self.sum())
 
     @staticmethod
     def get_empty():
@@ -89,7 +87,7 @@ class PastGame:
         return self.final_score < other.final_score
 
     def compute_score(self):
-        self.final_score = self.rounds[-1].board.value()
+        self.final_score = self.rounds[-1].score
         return self.final_score
 
     def print(self):
@@ -234,20 +232,16 @@ class GamesHistory:
             print('===========')
         print('#########################')
 
-    def get_training_data_move_board(self):
-        move_boards = sum([[(game_round.move, game_round.board) for game_round in game.rounds] for game in self.games],
-                          [])
-        moves, boards = map(list, zip(*move_boards))
-        return moves, boards
-
-    def get_training_data_board_reward(self):
+    def get_training_data(self):
         all_boards = []
         all_rewards = []
         all_move_nrs = []
         # discount = 0.9
-        reward_part = 0.3
+        # reward_part = 0.3
         for game in self.games:
-            move_nrs, scores = map(list, zip(*[(rnd.game_round_num, rnd.score) for rnd in game.rounds]))
+            move_nrs = [rnd.game_round_num for rnd in game.rounds]
+            scores = [rnd.score for rnd in game.rounds]
+            boards = [rnd.board for rnd in game.rounds]
             # rewards = [2 * nxt - curr for curr, nxt in zip(board_values, board_values[1:])]
             # curr = rewards[-1]
             # new_rewards = []
@@ -257,16 +251,14 @@ class GamesHistory:
             # new_rewards.reverse()
 
             # this is small hack to ensure that we have sufficient data for higher level boards
-            all_rewards.extend(scores[2:] + [scores[-1]] * 2)
-            # trim is necessary coz we drop last round for computing deltas at line with zip
-            all_boards.extend([game_round.board for game_round in game.rounds])
-            all_move_nrs.extend(move_nrs)
-            # print(len(all_boards), len(all_rewards))
-            assert len(all_boards) == len(all_rewards)
+            shifted_rewards = scores[2:] + [scores[-1]] * 2
+            all_rewards.append(shifted_rewards)
+            all_boards.append(boards)
+            all_move_nrs.append(move_nrs)
         with open("game_history.pickle", "wb") as ffile:
             pickle.dump((all_boards, all_rewards), ffile)
         print("data dumped")
-        return all_boards, all_rewards, all_move_nrs
+        return all_boards, all_rewards
 
     def get_best_worst_score(self):
         return self.games[-1].final_score, self.games[0].final_score
