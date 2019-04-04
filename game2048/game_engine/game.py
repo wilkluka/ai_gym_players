@@ -234,31 +234,38 @@ class GamesHistory:
 
     def get_training_data(self):
         all_boards = []
-        all_rewards = []
+        all_scores = []
         all_move_nrs = []
-        # discount = 0.9
+        all_disc_rewards = []
+        discount_rewards = 0.99
+        discount_scores = 0.98
+        all_final_scores = []
+        all_shifted_scores = []
         # reward_part = 0.3
         for game in self.games:
             move_nrs = [rnd.game_round_num for rnd in game.rounds]
             scores = [rnd.score for rnd in game.rounds]
             boards = [rnd.board for rnd in game.rounds]
-            # rewards = [2 * nxt - curr for curr, nxt in zip(board_values, board_values[1:])]
-            # curr = rewards[-1]
-            # new_rewards = []
-            # for r in rewards[::-1]:
-            #     curr = curr * discount + r * (1-discount)
-            #     new_rewards.append(curr)
-            # new_rewards.reverse()
-
+            discounted_scores = []
+            acc = scores[-1]
+            for r in scores[::-1]:
+                acc = acc * discount_scores + r * (1-discount_scores)
+                discounted_scores.append(acc)
+            discounted_scores.reverse()
             # this is small hack to ensure that we have sufficient data for higher level boards
-            shifted_rewards = scores[2:] + [scores[-1]] * 2
-            all_rewards.append(shifted_rewards)
+            all_scores.append(scores)
+            # discounted_scores += [discounted_scores[-1]]
+            all_shifted_scores.append(discounted_scores[1:] + [discounted_scores[-1]])
             all_boards.append(boards)
             all_move_nrs.append(move_nrs)
+            all_final_scores.append([scores[-1]] * len(scores))
+            assert len(all_shifted_scores) == len(all_boards)
+            assert len(boards) == len(discounted_scores)
         with open("game_history.pickle", "wb") as ffile:
-            pickle.dump((all_boards, all_rewards), ffile)
+            pickle.dump({"boards": all_boards, "scores": all_scores, "disc_rewards": all_disc_rewards,
+                         "shifted_scores": all_shifted_scores}, ffile)
         print("data dumped")
-        return all_boards, all_rewards
+        return all_boards, all_shifted_scores
 
     def get_best_worst_score(self):
         return self.games[-1].final_score, self.games[0].final_score

@@ -4,6 +4,13 @@ import numpy as np
 
 class MagicList(UserList):
 
+    @staticmethod
+    def ret_magic_list(func):
+        def inner(*args, **kwargs):
+            return MagicList(func(*args, **kwargs))
+        return inner
+
+    @ret_magic_list.__get__(object)
     def flatten(self):
         def flatten_list(seq):
             if isinstance(seq, list):
@@ -31,5 +38,15 @@ class MagicList(UserList):
             lst = list(self)
         return np.array(lst)
 
-    def extract(self, extractor):
-        return [extractor(elem) for elem in self]
+    @ret_magic_list.__get__(object)
+    def map(self, mapper=lambda x: x, filter_func=lambda x: True):
+        return [mapper(elem) for elem in self if filter_func(elem)]
+
+    @ret_magic_list.__get__(object)
+    def split(self, indexes):
+        cut = [elem for i, elem in enumerate(self) if i in indexes]
+        remains = [elem for i, elem in enumerate(self) if i not in indexes]
+        return remains, cut
+
+
+MList = MagicList

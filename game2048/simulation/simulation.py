@@ -1,3 +1,4 @@
+from logging import warning
 from random import random
 from typing import List
 
@@ -10,7 +11,7 @@ from game_engine.game import Game, GamesHistory, all_moves, shuffle_moves, PastG
 from utils.magic_collections import MagicList
 from utils.tb import TBLogger
 
-REWARD_MULT = 20
+REWARD_MULT = 1
 
 
 def gen_from_beta(beta_par: float):
@@ -75,8 +76,10 @@ class Simulation(object):
         past_game = PastGame()
         round_count = 0
         print("random_prob", random_move_prob)
+        warning("p = 1 which means we will do all moves with NN")
         while not game.is_game_over():
             p = random()  # U(0,1)
+            p = 1
             current_board = game.board.copy()
             if p > random_move_prob:
                 possibilities = [possibility for possibility in game.possible_moves.values() if possibility.is_possible]
