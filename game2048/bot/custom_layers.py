@@ -1,4 +1,4 @@
-from keras.layers import PReLU, Conv2D, Concatenate, SpatialDropout2D
+from keras.layers import PReLU, Conv2D, Concatenate, DepthwiseConv2D
 
 
 class PRELU(PReLU):
@@ -10,16 +10,16 @@ class PRELU(PReLU):
         super(PRELU, self).__init__(**kwargs)
 
 
-def conv_prelu(n=128, kernel_size=(2, 2), padding='valid'):
+def conv_prelu(n=512, kernel_size=(2, 2), padding='same'):
     def inside(x):
         x = Conv2D(filters=n, kernel_size=kernel_size, padding=padding)(x)
-        x = SpatialDropout2D(.5)(x)
+        # BatchNorm
         x = PRELU()(x)
         return x
     return inside
 
 
-def vh_concat(n=128, kernel_size=2, padding='valid'):
+def vh_concat(n=512, kernel_size=2, padding='same'):
     def inside(x):
         x1 = conv_prelu(n=n, kernel_size=(kernel_size, 1), padding=padding)(x)
         x2 = conv_prelu(n=n, kernel_size=(1, kernel_size), padding=padding)(x)
@@ -27,5 +27,25 @@ def vh_concat(n=128, kernel_size=2, padding='valid'):
         return x3
 
     return inside
+
+
+def depthwise_conv_prelu(n=16, kernel_size=(2, 2), padding='same'):
+    def inside(x):
+        x = DepthwiseConv2D(depth_multiplier=n, kernel_size=kernel_size, padding=padding)(x)
+        # BatchNorm
+        x = PRELU()(x)
+        return x
+    return inside
+
+
+def depthwise_vh_concat(n=16, kernel_size=2, padding='same'):
+    def inside(x):
+        x1 = depthwise_conv_prelu(n=n, kernel_size=(kernel_size, 1), padding=padding)(x)
+        x2 = depthwise_conv_prelu(n=n, kernel_size=(1, kernel_size), padding=padding)(x)
+        x3 = Concatenate()([x1, x2])
+        return x3
+
+    return inside
+
 
 

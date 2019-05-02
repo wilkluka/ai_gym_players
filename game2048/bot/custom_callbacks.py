@@ -8,7 +8,7 @@ from keras import backend as K
 class NextBestModelCheckpoint(ModelCheckpoint):
     """
     this class is to fix issue with original ModelCheckpoint where saving model every N epochs may be a bad idea
-    instead of save best after N epochs
+    instead of save best after at least N epochs
     """
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
@@ -117,4 +117,16 @@ class TensorBoardTemplate(TensorBoard):
             logs = logs or {}
             logs['lr'] = K.get_value(self.model.optimizer.lr)
         super(TensorBoardTemplate, self).on_epoch_end(epoch, logs)
+
+
+class TensorBoardCountRuns(TensorBoard):
+    def __init__(self, log_dir_template, **kwargs):
+        super().__init__(**kwargs)
+        self.runs_count = 0
+        self.log_dir_template = log_dir_template
+        self.update_log_dir()
+
+    def update_log_dir(self):
+        self.runs_count += 1
+        self.log_dir = self.log_dir_template.format(run=self.runs_count)
 

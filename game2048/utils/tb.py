@@ -7,6 +7,7 @@ import seaborn as sns
 
 class TBLogger:
     def __init__(self, logdir):
+        self.logdir = logdir
         self.writer = tf.summary.FileWriter(logdir)
 
     def close(self):
@@ -73,3 +74,20 @@ class TBLogger:
     def log_scatter_plot(self, tag, x, y, global_step):
         fig = sns.jointplot(x, y, kind="hex", height=7, space=0)
         self.log_plot(tag, fig, global_step)
+
+
+class TBLoggerExtended(TBLogger):
+    def __init__(self, logdir):
+        super().__init__(logdir)
+        self.writers = {}  # here we will resolve writers by name
+
+    def log_named_scalar(self, tag, value, global_step, name):
+        summary = tf.Summary()
+        summary.value.add(tag=tag, simple_value=value)
+        writer = None
+        if name in self.writers:
+            writer = self.writers[name]
+        else:
+            writer = self.writers[name] = tf.summary.FileWriter("%s/%s" % (self.logdir, name))
+        writer.add_summary(summary, global_step=global_step)
+        writer.flush()
