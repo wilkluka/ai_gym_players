@@ -55,6 +55,15 @@ class Board(np.ndarray):
     def __repr__(self):
         return "Board({})".format(self.tolist())
 
+    def add_random2(self):
+        indexes = np.where(self == 0)
+        insert_point_index = np.random.choice(np.arange(0, indexes[0].size))
+        self[indexes[0][insert_point_index], indexes[1][insert_point_index]] = 2
+        self.random2 = (indexes[0][insert_point_index], indexes[1][insert_point_index])
+
+    def remove_random2(self):
+        self[self.random2] = 0
+
 
 class GameRound:
 
@@ -115,12 +124,11 @@ class Game:
 
     def _add_new_board_tile(self) -> None:
         if np.all(self.board > 0):
-            return
+            raise ValueError
         value_to_insert = np.random.choice(a=[2, 4], size=1, p=[0.9, 0.1])
-        insert_point = np.random.choice(np.arange(0, BOARD_SIZE), 2)
-        while self.board[tuple(insert_point)] != 0:
-            insert_point = np.random.choice(np.arange(0, BOARD_SIZE), 2)
-        self.board[tuple(insert_point)] = value_to_insert
+        indexes = np.where(self.board==0)
+        insert_point_index = np.random.choice(np.arange(0, indexes[0].size))
+        self.board[indexes[0][insert_point_index], indexes[1][insert_point_index]] = value_to_insert
 
     def _make_move(self, move) -> None:
         if move in (Move.UP, Move.DOWN):
@@ -208,13 +216,14 @@ class GamesHistory:
 
     @staticmethod
     def merge(first, second):
-        new_ob = GamesHistory("merged")
-        new_ob.games = first.games + second.games
+        new_ob = GamesHistory("merged", limit=second.limit+first.limit)
+        for game in first.games + second.games:
+            new_ob.add_game(game)
         return new_ob
 
     def add_game(self, past_game: PastGame):
         insort(self.games, past_game)
-        if len(self.games) > self.limit:
+        while len(self.games) > self.limit:
             self.games.pop(0)
 
     def update(self, other):
@@ -232,46 +241,61 @@ class GamesHistory:
             print('===========')
         print('#########################')
 
-    def get_training_data(self):
+    def get_training_data(self, dump=True):
         all_boards = []
-        all_scores = []
         all_move_nrs = []
-        all_disc_rewards = []
-        discount_rewards = 0.99
-        discount_scores = 0.98
+        all_discounted_scores = []
         all_final_scores = []
         all_shifted_scores = []
+        discount_scores = 0.8
         # reward_part = 0.3
         for game in self.games:
             move_nrs = [rnd.game_round_num for rnd in game.rounds]
             scores = [rnd.score for rnd in game.rounds]
+            rewards = [nxt - curr for nxt, curr in zip(scores[1:], scores)]
             boards = [rnd.board for rnd in game.rounds]
             discounted_scores = []
-            acc = scores[-1]
-            for r in scores[::-1]:
-                acc = acc * discount_scores + r * (1-discount_scores)
+            all_shifted_scores.append(scores[1:] + [scores[-1]])
+            acc = int(boards[-1].max())
+            for s in rewards[::-1]:
+                acc = (acc + s) * discount_scores
                 discounted_scores.append(acc)
             discounted_scores.reverse()
-            # this is small hack to ensure that we have sufficient data for higher level boards
-            all_scores.append(scores)
-            # discounted_scores += [discounted_scores[-1]]
-            all_shifted_scores.append(discounted_scores[1:] + [discounted_scores[-1]])
+
+            all_discounted_scores.append([0] + discounted_scores)
             all_boards.append(boards)
             all_move_nrs.append(move_nrs)
             all_final_scores.append([scores[-1]] * len(scores))
-            assert len(all_shifted_scores) == len(all_boards)
-            assert len(boards) == len(discounted_scores)
-        with open("game_history.pickle", "wb") as ffile:
-            pickle.dump({"boards": all_boards, "scores": all_scores, "disc_rewards": all_disc_rewards,
-                         "shifted_scores": all_shifted_scores}, ffile)
+            assert len(all_shifted_scores[-1]) == len(all_boards[-1])
+            assert len(all_boards[-1]) == len(all_discounted_scores[-1])
+        if dump:
+            with open("game_history.pickle", "wb") as ffile:
+                pickle.dump(self, ffile)
         print("data dumped")
-        return all_boards, all_shifted_scores
+        return all_boards, all_shifted_scores, all_discounted_scores, all_move_nrs
+
+    def get_rewards_data(self):
+        all_boards = []
+        all_scores = []
+        for game in self.games:
+            scores = [rnd.score for rnd in game.rounds]
+            boards = [rnd.board for rnd in game.rounds]
+            all_scores.append(scores)
+            all_boards.append(boards)
+        return all_boards, all_scores
 
     def get_best_worst_score(self):
         return self.games[-1].final_score, self.games[0].final_score
 
     def erase(self):
         self.games = []
+
+    @classmethod
+    def retrieve(cls):
+        gh = None
+        with open("game_history.pickle", "rb") as ffile:
+            gh = pickle.load(ffile)
+        return gh
 
 
 def shuffle_moves():
