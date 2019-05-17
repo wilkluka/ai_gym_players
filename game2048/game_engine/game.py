@@ -247,7 +247,7 @@ class GamesHistory:
         all_discounted_scores = []
         all_final_scores = []
         all_shifted_scores = []
-        discount_scores = 0.8
+        discount_scores = 0.9
         # reward_part = 0.3
         for game in self.games:
             move_nrs = [rnd.game_round_num for rnd in game.rounds]
@@ -256,7 +256,7 @@ class GamesHistory:
             boards = [rnd.board for rnd in game.rounds]
             discounted_scores = []
             all_shifted_scores.append(scores[1:] + [scores[-1]])
-            acc = int(boards[-1].max())
+            acc = rewards[-1]
             for s in rewards[::-1]:
                 acc = (acc + s) * discount_scores
                 discounted_scores.append(acc)

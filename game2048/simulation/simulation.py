@@ -67,6 +67,7 @@ class Simulation(object):
                 choices = shuffle_moves()
             for choice in choices:
                 if game.possible_moves[choice].is_possible:
+                    current_board = game.possible_moves[choice].board.copy()
                     # past_game.add_round(GameRound(round_count, choice, current_board))
                     game.move(choice)
                     past_game.add_round(GameRound(round_count, choice, game.current_score, current_board))

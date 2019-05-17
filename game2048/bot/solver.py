@@ -118,13 +118,13 @@ class BoardSolver:
         final_values = [[s[-1] for ss in s] for s in scores]
 
         boards = MList(boards).flatten().to_ndarray()
-        discounted_scores = MList(final_values).flatten().to_ndarray()
+        discounted_scores = MList(discounted_scores).flatten().to_ndarray()
         x_boards, [y] = self.generate_input(boards, [discounted_scores])
 
         my_callbacks = [self.tb_cbk]
         x_boards, y = shuffle(x_boards, y)
         self.last_max_score = max(self.last_max_score, y.max())
-        self.model.fit(x={"input_boards": x_boards}, y=y, epochs=1, validation_split=.5,
+        self.model.fit(x={"input_boards": x_boards}, y=y, epochs=1, validation_split=1-GOLDEN_RATIO,
                        shuffle=True, batch_size=BATCH_SIZE, verbose=0, callbacks=my_callbacks)
         if self.episode_counter % 10 == 1:
             self.model.save_weights(WEIGHTS_FILE_PATH, overwrite=True)
