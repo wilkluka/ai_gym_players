@@ -14,7 +14,8 @@ from sklearn.utils import shuffle
 
 from utils.magic_collections import MList
 
-BOARD_VALUES = np.array([0] + [2**i for i in range(1, 16)]).reshape(-1, 1)
+BOARD_VALUES_16 = np.array([0] + [2**i for i in range(1, 16)]).reshape(-1, 1)
+BOARD_VALUES_15 = np.array([0] + [2**i for i in range(1, 15)]).reshape(-1, 1)
 BIG_INT = int(1e8)
 MY_ACTIVATION = 'linear'
 
@@ -24,6 +25,7 @@ WEIGHTS_FILE_PATH = "model_weights.h5"
 WEIGHTS_PICKLE = "weights.pickle"
 
 GOLDEN_RATIO = 0.62
+ONE_MINUS_GOLDEN_RATIO = 1-GOLDEN_RATIO
 # MONITOR_VALUE = 'val_loss'
 MONITOR_VALUE = 'loss'
 MONITOR_MODE = 'min'
@@ -37,8 +39,10 @@ class BoardSolver:
         self._create_ann()
         self.moves_ohe = OneHotEncoder(categories='auto')
         self.moves_ohe.fit([[m.value] for m in all_moves])
-        self.board_ohe = OneHotEncoder(categories='auto', handle_unknown='ignore')
-        self.board_ohe.fit(BOARD_VALUES)
+        self.board_ohe_16 = OneHotEncoder(categories='auto', handle_unknown='ignore')
+        self.board_ohe_16.fit(BOARD_VALUES_16)
+        self.board_ohe_15 = OneHotEncoder(categories='auto', handle_unknown='ignore')
+        self.board_ohe_15.fit(BOARD_VALUES_15)
         self.early_stopper_cbk = VerboseEarlyStopping(monitor=MONITOR_VALUE, min_delta=-1, verbose=1,
                                                       mode=MONITOR_MODE, baseline=None, restore_best_weights=True)
         # self.scatter_log = TBLogger("logs/scatter")
@@ -49,16 +53,27 @@ class BoardSolver:
                                                          period=20)
         self.last_max_score = 1
 
-    def transform_boards(self, list_of_boards):
+    def transform_boards_16(self, list_of_boards):
         array_of_boards = np.array(list_of_boards)
-        one_hot_sparse = self.board_ohe.transform(array_of_boards.reshape([-1, 1]))
+        one_hot_sparse = self.board_ohe_16.transform(array_of_boards.reshape([-1, 1]))
         return one_hot_sparse.toarray().reshape([-1, 4, 4, 16])
+
+    def transform_boards_15(self, list_of_boards):
+        array_of_boards = np.array(list_of_boards)
+        one_hot_sparse = self.board_ohe_15.transform(array_of_boards.reshape([-1, 1]))
+        one_hot_sparse.toarray().reshape([-1, 4, 4, 15])
+
+        # this is information for solver that these values can be merged
+        array_of_boards[array_of_boards > 0] = 1
+        array_of_boards = array_of_boards.reshape([-1, 4, 4, 1])
+
+        return np.concatenate([one_hot_sparse, array_of_boards], axis=-1)
 
     def generate_input(self, list_of_boards, to_augment=None):
         """
         to_augment variable is a collection for arrays that are 1D and we want to enlarge it 8 times
         """
-        boards = self.transform_boards(list_of_boards)
+        boards = self.transform_boards_16(list_of_boards)
         # boards = np.array(list_of_boards)
         # boards = np.log2(1 + boards)
         boards1 = np.rot90(boards, axes=(1, 2))
@@ -113,19 +128,20 @@ class BoardSolver:
     def train(self, games_history: GamesHistory):
 
         self.episode_counter += 1
+        my_callbacks = [self.tb_cbk]
 
         boards, scores, discounted_scores, move_nrs = games_history.get_training_data()
-        final_values = [[s[-1] for ss in s] for s in scores]
 
-        boards = MList(boards).flatten().to_ndarray()
+        boards_flatten = MList(boards).flatten().to_ndarray()
         discounted_scores = MList(discounted_scores).flatten().to_ndarray()
-        x_boards, [y] = self.generate_input(boards, [discounted_scores])
+        # boards_flatten = np.concatenate([boards_flatten, boards_flatten * 2])
+        # discounted_scores = np.concatenate([discounted_scores, discounted_scores * 2])
+        x_boards, [y] = self.generate_input(boards_flatten, [discounted_scores])
 
-        my_callbacks = [self.tb_cbk]
-        x_boards, y = shuffle(x_boards, y)
         self.last_max_score = max(self.last_max_score, y.max())
-        self.model.fit(x={"input_boards": x_boards}, y=y, epochs=1, validation_split=1-GOLDEN_RATIO,
+        self.model.fit(x={"input_boards": x_boards}, y=y, epochs=1, validation_split=ONE_MINUS_GOLDEN_RATIO,
                        shuffle=True, batch_size=BATCH_SIZE, verbose=0, callbacks=my_callbacks)
+
         if self.episode_counter % 10 == 1:
             self.model.save_weights(WEIGHTS_FILE_PATH, overwrite=True)
             print('weights saved')
@@ -133,12 +149,12 @@ class BoardSolver:
 
     def predict(self, possibilities: List[GameProgress], move_nr):
         moves, boards = zip(*[(possibility.move, possibility.board) for possibility in possibilities])
-        for b in boards:
-            b.add_random2()
+        # for b in boards:
+        #     b.add_random2()
         x_boards, _ = self.generate_input(boards)
         expected_values_with_rotations = self.model.predict({"input_boards": x_boards})
-        for b in boards:
-            b.remove_random2()
+        # for b in boards:
+        #     b.remove_random2()
         expected_values = expected_values_with_rotations.reshape(-1, len(possibilities)).mean(axis=0)
         return expected_values
 

@@ -11,5 +11,5 @@ if __name__ == "__main__":
         print("previous logs removed")
     except FileNotFoundError:
         print("nothing to remove")
-    simulation = Simulation(expected_rounds=12, history_limit=6)
+    simulation = Simulation(expected_rounds=10, history_limit=3)
     simulation.run()
