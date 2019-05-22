@@ -16,6 +16,7 @@ from utils.magic_collections import MList
 
 BOARD_VALUES_16 = np.array([0] + [2**i for i in range(1, 16)]).reshape(-1, 1)
 BOARD_VALUES_15 = np.array([0] + [2**i for i in range(1, 15)]).reshape(-1, 1)
+BOARD_VALUES_14 = np.array([0] + [2**i for i in range(1, 15)]).reshape(-1, 1)
 BIG_INT = int(1e8)
 MY_ACTIVATION = 'linear'
 
@@ -43,6 +44,8 @@ class BoardSolver:
         self.board_ohe_16.fit(BOARD_VALUES_16)
         self.board_ohe_15 = OneHotEncoder(categories='auto', handle_unknown='ignore')
         self.board_ohe_15.fit(BOARD_VALUES_15)
+        self.board_ohe_14 = OneHotEncoder(categories='auto', handle_unknown='ignore')
+        self.board_ohe_14.fit(BOARD_VALUES_14)
         self.early_stopper_cbk = VerboseEarlyStopping(monitor=MONITOR_VALUE, min_delta=-1, verbose=1,
                                                       mode=MONITOR_MODE, baseline=None, restore_best_weights=True)
         # self.scatter_log = TBLogger("logs/scatter")
@@ -61,19 +64,36 @@ class BoardSolver:
     def transform_boards_15(self, list_of_boards):
         array_of_boards = np.array(list_of_boards)
         one_hot_sparse = self.board_ohe_15.transform(array_of_boards.reshape([-1, 1]))
-        one_hot_sparse.toarray().reshape([-1, 4, 4, 15])
+        one_hot_sparse = one_hot_sparse.toarray().reshape([-1, 4, 4, 15])
 
+        # very important!!! greatly speeds up solving
         # this is information for solver that these values can be merged
         array_of_boards[array_of_boards > 0] = 1
         array_of_boards = array_of_boards.reshape([-1, 4, 4, 1])
 
         return np.concatenate([one_hot_sparse, array_of_boards], axis=-1)
 
+    def transform_boards_14(self, list_of_boards):
+        array_of_boards = np.array(list_of_boards)
+        one_hot_sparse = self.board_ohe_15.transform(array_of_boards.reshape([-1, 1]))
+        one_hot_sparse = one_hot_sparse.toarray().reshape([-1, 4, 4, 15])
+
+        # this is information for solver that these values can be merged
+        array_of_boards24 = array_of_boards.copy()
+        array_of_boards24.fill(0)
+        array_of_boards24[array_of_boards == 2] = 1
+        array_of_boards24[array_of_boards == 4] = .5
+        array_of_boards24 = array_of_boards24.reshape([-1, 4, 4, 1])
+        array_of_boards[array_of_boards > 0] = 1
+        array_of_boards = array_of_boards.reshape([-1, 4, 4, 1])
+
+        return np.concatenate([one_hot_sparse, array_of_boards, array_of_boards24], axis=-1)
+
     def generate_input(self, list_of_boards, to_augment=None):
         """
         to_augment variable is a collection for arrays that are 1D and we want to enlarge it 8 times
         """
-        boards = self.transform_boards_16(list_of_boards)
+        boards = self.transform_boards_15(list_of_boards)
         # boards = np.array(list_of_boards)
         # boards = np.log2(1 + boards)
         boards1 = np.rot90(boards, axes=(1, 2))
@@ -107,7 +127,8 @@ class BoardSolver:
         # x = conv_prelu(n=1024, padding='valid')(x)  # 2, 2
         # x = conv_prelu(n=1024, padding='valid')(x)  # 1, 1
         # x = Flatten()(x)
-        # x = Dense(64, activation=PRELU())(x)
+        # x = Dense(256, activation=PRELU())(x)
+        # x = Dense(256, activation=PRELU())(x)
 
         prediction = Dense(1, activation='linear')(x)
         model = Model(inputs=[input_boards], outputs=prediction)
@@ -118,8 +139,8 @@ class BoardSolver:
     def _compile_model(self, lr=0.002):
         """ we keep here optimizers for resetting them
          we use high learning rate because later on fit we use lr_scheduler"""
-        # self.my_optimizer = Nadam(lr=lr, beta_1=0.9, beta_2=0.999, epsilon=None, schedule_decay=0.004)
-        self.my_optimizer = Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0004, amsgrad=False)
+        # self.my_optimizer = Nadam(lr=lr, beta_1=0.9, beta_2=0.999, epsilon=None, schedule_decay=0.0)
+        self.my_optimizer = Adam(lr=0.0015, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False)
 
         self.model.compile(optimizer=self.my_optimizer, loss='mean_squared_error')
         # if self.episode_counter >= 0:

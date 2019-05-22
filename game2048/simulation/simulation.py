@@ -41,7 +41,7 @@ class Simulation(object):
 
     def play(self):
         # self.games_history.erase()
-        self.temp_games_history = GamesHistory("turn_history", limit=self.expected_rounds)
+        self.temp_games_history = GamesHistory("turn_history", limit=self.expected_rounds//2)
         for _ in tqdm(range(self.expected_rounds)):
             past_game = self.play_round()
             self.temp_games_history.add_game(past_game)
@@ -76,7 +76,7 @@ class Simulation(object):
         last_score = past_game.compute_score()
         if last_score > self.current_max:
             self.current_max = last_score
-            if last_score > 7000:
+            if last_score > 18000:
                 subprocess.call("paplay /usr/share/sounds/freedesktop/stereo/complete.oga".split())
         # past_game.print()
         return past_game

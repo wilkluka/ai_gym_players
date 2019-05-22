@@ -5,11 +5,11 @@ import subprocess
 
 
 if __name__ == "__main__":
-    subprocess.call('paplay /usr/share/sounds/freedesktop/stereo/trash-empty.oga'.split())
+    # subprocess.call('paplay /usr/share/sounds/freedesktop/stereo/trash-empty.oga'.split())
     try:
         shutil.rmtree('./logs/')
         print("previous logs removed")
     except FileNotFoundError:
         print("nothing to remove")
-    simulation = Simulation(expected_rounds=10, history_limit=3)
+    simulation = Simulation(expected_rounds=40, history_limit=3)
     simulation.run()

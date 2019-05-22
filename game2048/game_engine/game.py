@@ -232,7 +232,7 @@ class GamesHistory:
 
     def print(self, last_n=10):
         last_n = min(last_n, self.limit)
-        print(last_n, self.limit)
+        print("printing last ", last_n, "replay buffer size ", self.limit)
         print('#########################')
         print(self.info)
         for game in self.games[::-1]:
